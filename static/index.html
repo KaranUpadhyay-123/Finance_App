@@ -1,0 +1,53 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FinDiff - What changed in the risk factors?</title>
+<style>
+:root{--bg:#0b0f17;--card:#141b29;--tx:#e6ebf5;--mu:#8b97ad;--ac:#5eead4;--hi:#f87171;--md:#fbbf24;--lo:#60a5fa}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.55 system-ui,sans-serif}
+main{max-width:920px;margin:0 auto;padding:32px 16px}h1{margin:0;font-size:28px}h1 span{color:var(--ac)}
+p.sub{color:var(--mu);margin:4px 0 20px}form{display:flex;gap:8px}
+input{flex:1;padding:12px;border-radius:8px;border:1px solid #26314a;background:var(--card);color:var(--tx);font-size:16px;text-transform:uppercase}
+button{padding:12px 20px;border:0;border-radius:8px;background:var(--ac);color:#04221e;font-weight:700;cursor:pointer}
+.card{background:var(--card);border-radius:12px;padding:18px;margin-top:16px}.row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:700px){.row{grid-template-columns:1fr}}h3{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mu)}
+.score{font-size:48px;font-weight:800}.tag{font-size:11px;padding:2px 8px;border-radius:99px;margin-left:6px;color:#000}
+.high{background:var(--hi)}.medium{background:var(--md)}.low{background:var(--lo)}li{margin-bottom:10px}small{color:var(--mu)}
+details{margin-top:8px}summary{cursor:pointer;color:var(--ac)}.para{border-left:3px solid #26314a;padding-left:10px;margin:8px 0;color:var(--mu);font-size:13px}
+.add{border-color:#34d399}.rem{border-color:var(--hi)}#msg{margin-top:16px;color:var(--mu)}
+</style></head><body><main>
+<h1>Fin<span>Diff</span></h1>
+<p class="sub">AI reads two years of a company's SEC 10-K risk factors and tells you what quietly changed.</p>
+<form id="f"><input id="t" placeholder="Ticker e.g. TSLA, NVDA, AAPL" required><button>Analyze</button></form>
+<div id="msg"></div><div id="out"></div></main>
+<script>
+const $=s=>document.querySelector(s);
+const el=(tag,cls,txt)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e};
+function chart(prices,filings){
+  if(prices.length<2)return el('small','', 'Price data unavailable');
+  const W=860,H=140,min=Math.min(...prices.map(p=>p.c)),max=Math.max(...prices.map(p=>p.c));
+  const t0=prices[0].t,t1=prices.at(-1).t,x=t=>(t-t0)/(t1-t0)*W,y=c=>H-(c-min)/(max-min||1)*(H-10)-5;
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%"><polyline fill="none" stroke="#5eead4" stroke-width="2" points="${prices.map(p=>x(p.t).toFixed(1)+','+y(p.c).toFixed(1)).join(' ')}"/>`;
+  filings.forEach(f=>{const t=new Date(f.date).getTime()/1000;if(t>t0&&t<t1)s+=`<line x1="${x(t)}" x2="${x(t)}" y1="0" y2="${H}" stroke="#f87171" stroke-dasharray="4"/><text x="${x(t)+4}" y="12" fill="#f87171" font-size="11">10-K ${f.date}</text>`});
+  const d=el('div');d.innerHTML=s+'</svg>';return d}
+function list(items,fn){const ul=el('ul');items.forEach(i=>ul.append(fn(i)));return ul}
+function render(d){
+  const o=$('#out');o.replaceChildren();const a=d.ai||{};
+  const top=el('div','card');top.append(el('h3','',`${d.company} (${d.ticker}) - ${d.filings[1].date} vs ${d.filings[0].date}`));
+  if(a.error){top.append(el('p','',a.error))}else{
+    const r=el('div','row'),l=el('div');l.append(el('div','score',`${a.alert_score}/10`),el('small','','Risk-change alert score'));
+    const rr=el('div');rr.append(el('p','',a.headline),el('p','',a.tone_shift));r.append(l,rr);top.append(r)}
+  top.append(el('small','',`${d.stats.added} new / ${d.stats.removed} removed paragraphs out of ${d.stats.new_paras}`));o.append(top);
+  const c=el('div','card');c.append(el('h3','','Price vs. filing date'),chart(d.prices,d.filings));o.append(c);
+  if(!a.error){const r=el('div','row');
+    const n=el('div','card');n.append(el('h3','','New risks'));
+    n.append(list(a.new_risks||[],i=>{const li=el('li');const b=el('b','',i.title);b.append(el('span','tag '+i.severity,i.severity));li.append(b,el('br'),el('small','',i.why_it_matters));return li}));
+    const m=el('div','card');m.append(el('h3','','Dropped risks'));
+    m.append(list(a.dropped_risks||[],i=>{const li=el('li');li.append(el('b','',i.title),el('br'),el('small','',i.interpretation));return li}));
+    r.append(n,m);o.append(r);
+    const q=el('div','card');q.append(el('h3','','Questions to ask management'));q.append(list(a.analyst_questions||[],i=>el('li','',i)));o.append(q)}
+  const raw=el('div','card');raw.append(el('h3','','Evidence (raw text from the filing)'));
+  [['Added','add',d.added],['Removed','rem',d.removed]].forEach(([n,cl,ps])=>{const de=el('details');de.append(el('summary','',`${n} (${ps.length} shown)`));ps.forEach(p=>de.append(el('div','para '+cl,p)));raw.append(de)});
+  o.append(raw);o.append(el('small','','Educational analysis from public SEC filings. Not investment advice.'))}
+$('#f').onsubmit=async e=>{e.preventDefault();$('#out').replaceChildren();$('#msg').textContent='Fetching filings and analysing... (20-40s first time)';
+  try{const r=await fetch('/api/analyze/'+encodeURIComponent($('#t').value));const j=await r.json();
+    if(!r.ok)throw new Error(j.detail);$('#msg').textContent='';render(j)}catch(err){$('#msg').textContent='Error: '+err.message}};
+</script></body></html>
